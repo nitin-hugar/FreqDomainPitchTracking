@@ -106,6 +106,49 @@ def track_pitch_fftmax(x: T, blockSize: int, hopSize: int, fs: int):
     f0 = f_in_hz[np.argmax(Xb, axis=-1)]
     return f0, time_in_sec  # both have shape (num_of_block, )
 
+# -- B.1 ---
+def get_f0_from_Hps(X, fs, order):
+    hps = X.copy()
+    for i in range(1, order):
+        Xd = X[:, ::i + 1]
+        hps = hps[:, :Xd.shape[1]]
+        hps *= Xd
+    f0 = f_in_hz[np.argmax(hps, axis=-1)]
+    return f0
+
+# -- B.2 ---
+def track_pitch_hps(x, blockSize, hopSize, fs):
+    xb, time_in_sec = block_audio(x, blockSize=blockSize, hopSize=hopSize, fs=fs)
+    Xb, f_in_hz = compute_spectrogram(xb, fs=fs)
+    f0 = get_f0_from_Hps(Xb, fs, order=4)
+    return f0, time_in_sec
+
+# --- C.1 ---
+def extract_rms(xb):
+    rms = np.zeros(xb.shape[0])
+    for block in range(xb.shape[0]):
+        rms[block] = np.sqrt(np.mean(np.square(xb[block])))
+        threshold = 1e-5  # truncated at -100dB
+        if rms[block] < threshold:
+            rms[block] = threshold
+        rms[block] = 20 * np.log10(rms[block])
+    return rms
+
+# --- C.2 ---
+def create_voicing_mask(rmsDb, thresholdDb):
+    mask = np.zeros(rmsDb.shape[0])
+    for i in range(rmsDb.shape[0]):
+        if rmsDb[i] >= thresholdDb:
+            mask[i] = 1
+        else:
+            mask[i] = 0
+    return mask
+
+# -- C.3 --
+def apply_voicing_mask(f0, mask):
+    f0Adj = f0 * mask
+    return f0Adj
+
 
 if __name__ == "__main__":
     for full_filename in glob("./trainData/*.wav"):
