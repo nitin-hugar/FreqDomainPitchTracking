@@ -7,7 +7,7 @@ from glob import glob
 
 
 T = np.ndarray  # for autocomplete engine, will be deleted before submission
-BLOCK_SIZE = 1 << 10
+BLOCK_SIZE = 1 << 10  # SHOULD NOT BE USED IN FUNCTION DEFINIION
 HOP_SIZE = BLOCK_SIZE >> 2
 DB_TRUNCATION_THRESHOLD = -100
 
@@ -113,6 +113,7 @@ def track_pitch_fftmax(x: T, blockSize: int, hopSize: int, fs: int):
 # --- B.1 ---
 def get_f0_from_Hps(X, fs, order):
     hps = X.copy()
+    f_in_hz = np.fft.rfftfreq((X.shape[-1] - 1) << 1, d=1/fs)
     for i in range(1, order):
         Xd = X[:, :: i + 1]
         hps = hps[:, : Xd.shape[1]]
@@ -177,40 +178,71 @@ def eval_pitchtrack_v2(estimation, annotation):
 
 
 # --- E.1 ---
+def executeassign3():
+    def gen_sin(f, t, fs):
+        return np.sin(2 * np.pi * f * np.arange(t * fs) / fs)
+    fs = 44100
+    sin_ = np.concatenate((gen_sin(441, 1, fs), gen_sin(882, 1, fs)))
+    ref_ = np.concatenate(
+        (np.ones(shape=(fs,)) * 441, np.ones(shape=(fs,)) * 882)
+    )
+    ref_in_block = np.max(
+        block_audio(ref_, BLOCK_SIZE, HOP_SIZE, fs)[0], axis=1
+    )
+
+    f0_fftmax, time_in_sec = track_pitch_fftmax(sin_, BLOCK_SIZE, HOP_SIZE, fs)
+    f0_hps, _ = track_pitch_hps(sin_, BLOCK_SIZE, HOP_SIZE, fs)
+    # plot
+    fig, ax = plt.subplots()
+    ax.plot(time_in_sec, f0_fftmax, label="estimated f0")
+    ax.plot(time_in_sec, f0_hps, label="estimated f0")
+    ax.plot(time_in_sec, ref_in_block, label="ground truth")
+    ax.set_ylim(0)
+    ax.set_xlabel("time (sec)")
+    ax.set_ylabel("estimated frequency (hz)")
+    ax2 = ax.twinx()
+    ax2.plot(time_in_sec, ref_in_block - f0_fftmax, "--", label="error fftmax")
+    ax2.plot(time_in_sec, ref_in_block - f0_hps, "--", label="error hps")
+    ax2.set_ylabel("error (hz)")
+    a, b = ax.get_legend_handles_labels()
+    c, d = ax2.get_legend_handles_labels()
+    ax.legend(a + c, b + d, loc=2)
+    plt.savefig("sig_error.png")
 
 
 if __name__ == "__main__":
-    for full_filename in glob("./trainData/*.wav"):
-        filepath, filename_ext = os.path.split(full_filename)
+    executeassign3()
+    # for full_filename in glob("./trainData/*.wav"):
+    #     filepath, filename_ext = os.path.split(full_filename)
 
-        fs, x = tool_read_audio(full_filename)
-        xb, time_in_sec = block_audio(x, BLOCK_SIZE, HOP_SIZE, fs)
-        Xb, f_in_hz = compute_spectrogram(xb, fs)
-        f0_fftmax, _ = track_pitch_fftmax(x, BLOCK_SIZE, HOP_SIZE, fs)
-        f0_hps, _ = track_pitch_hps(x, BLOCK_SIZE, HOP_SIZE, fs)
-        rms = extract_rms(xb)
-        voicing_mask = create_voicing_mask(rms, -30)
-        plt.plot(time_in_sec, rms)
-        plt.plot(time_in_sec, voicing_mask)
-        plt.show()
-        plt.clf()
-        print(Xb.shape, f0_fftmax.shape, f0_hps.shape)
+    #     fs, x = tool_read_audio(full_filename)
+    #     xb, time_in_sec = block_audio(x, BLOCK_SIZE, HOP_SIZE, fs)
+    #     Xb, f_in_hz = compute_spectrogram(xb, fs)
+    #     f0_fftmax, _ = track_pitch_fftmax(x, BLOCK_SIZE, HOP_SIZE, fs)
+    #     f0_hps, _ = track_pitch_hps(x, BLOCK_SIZE, HOP_SIZE, fs)
+    #     rms = extract_rms(xb)
+    #     voicing_mask = create_voicing_mask(rms, -30)
+    #     plt.plot(time_in_sec, rms)
+    #     plt.plot(time_in_sec, voicing_mask)
+    #     plt.show()
+    #     plt.clf()
+    #     print(Xb.shape, f0_fftmax.shape, f0_hps.shape)
 
-        plt.figure(figsize=(36, 6))
-        # plt.subplot(2, 1, 1)
-        plt.imshow(
-            magnitude_to_db(Xb.T),
-            cmap="inferno",
-            origin="lower",
-            extent=[0, time_in_sec[-1], 0, fs / 2],
-        )
-        plt.plot(time_in_sec, f0_fftmax, label="estimated f0 (fft max)")
-        plt.plot(time_in_sec, f0_hps, label="estimated f0 (hps)")
-        plt.ylim(bottom=10)
-        plt.yscale("log")
-        plt.ylabel("Magnitude Response [Hz]")
-        plt.xlabel("Time [s]")
-        plt.legend(loc="upper left")
-        plt.colorbar(format="%+2.0f dB", pad=0.01)
-        plt.title("block size = %d, hop size = %d" % (BLOCK_SIZE, HOP_SIZE))
-        plt.show()
+    #     plt.figure(figsize=(36, 6))
+    #     # plt.subplot(2, 1, 1)
+    #     plt.imshow(
+    #         magnitude_to_db(Xb.T),
+    #         cmap="inferno",
+    #         origin="lower",
+    #         extent=[0, time_in_sec[-1], 0, fs / 2],
+    #     )
+    #     plt.plot(time_in_sec, f0_fftmax, label="estimated f0 (fft max)")
+    #     plt.plot(time_in_sec, f0_hps, label="estimated f0 (hps)")
+    #     plt.ylim(bottom=10)
+    #     plt.yscale("log")
+    #     plt.ylabel("Magnitude Response [Hz]")
+    #     plt.xlabel("Time [s]")
+    #     plt.legend(loc="upper left")
+    #     plt.colorbar(format="%+2.0f dB", pad=0.01)
+    #     plt.title("block size = %d, hop size = %d" % (BLOCK_SIZE, HOP_SIZE))
+    #     plt.show()
