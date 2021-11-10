@@ -112,8 +112,8 @@ def get_f0_from_Hps(X, fs, order):
     for i in range(1, order):
         Xd = X[:, ::i + 1]
         hps = hps[:, :Xd.shape[1]]
-        hps *= Xd
-    f0 = f_in_hz[np.argmax(hps, axis=-1)]
+        hps *= Xd ** 2
+    f0 = f_in_hz[np.argmax(hps, axis=-1)]  # F in chat
     return f0
 
 # -- B.2 ---
