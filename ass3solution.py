@@ -371,6 +371,7 @@ def track_pitch(x, blockSize, hopSize, fs, method, voicingThres=-40):
     f0Adj = apply_voicing_mask(f0, mask)
     return f0Adj, timeInSec
 
+
 def eval_track_pitch(complete_path_to_data_folder):
     wavpath = np.array([])
     txtpath = np.array([])
@@ -388,7 +389,7 @@ def eval_track_pitch(complete_path_to_data_folder):
 
     blockSize = 1024
     hopSize = 512
-    errCentRms = np.zeros((3, 2))
+    errCentRms = np.zeros((3, 2, 3))
     for i, method in enumerate(['acf', 'max', 'hps']):
         for j,voicingThres in enumerate([-40, -20]):
             all_estimates = np.array([])
@@ -406,12 +407,14 @@ def eval_track_pitch(complete_path_to_data_folder):
 if __name__ == "__main__":
     # executeassign3()
 
-    fs, x = tool_read_audio("trainData/01-D_AMairena.wav")
-    for method in ("max", "hps"):
-        f0Adj, timeInSec = track_pitch(x, 1024, 512, fs, method, -40)
-        plt.clf()
-        plt.plot(f0Adj)
-        plt.show()
+    # fs, x = tool_read_audio("trainData/01-D_AMairena.wav")
+    # for method in ("max", "hps"):
+    #     f0Adj, timeInSec = track_pitch(x, 1024, 512, fs, method, -40)
+    #     plt.clf()
+    #     plt.plot(f0Adj)
+    #     plt.show()
+
+    print(eval_track_pitch("./trainData/"))
     # for full_filename in glob("./trainData/*.wav"):
     #     filepath, filename_ext = os.path.split(full_filename)
 
