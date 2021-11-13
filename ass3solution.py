@@ -113,37 +113,33 @@ def track_pitch_fftmax(x: T, blockSize: int, hopSize: int, fs: int):
 # --- B.1 ---
 def get_f0_from_Hps(X, fs, order):
     hps = X.copy()
-    f_in_hz = np.fft.rfftfreq((X.shape[-1] - 1) << 1, d=1 / fs)
+    fInHz = np.fft.rfftfreq((X.shape[-1] - 1) << 1, d=1 / fs)
     for i in range(1, order):
         Xd = X[:, :: i + 1]
         hps = hps[:, : Xd.shape[1]]
         hps *= Xd ** 2
-    f0 = f_in_hz[np.argmax(hps, axis=-1)]  # F in chat
+    f0 = fInHz[np.argmax(hps, axis=-1)]
     return f0
 
 
 # --- B.2 ---
 def track_pitch_hps(x, blockSize, hopSize, fs):
-    xb, time_in_sec = block_audio(
-        x, blockSize=blockSize, hopSize=hopSize, fs=fs
-    )
-    Xb, f_in_hz = compute_spectrogram(xb, fs=fs)
+    xb, time_in_sec = block_audio(x, blockSize, hopSize, fs)
+    Xb, f_in_hz = compute_spectrogram(xb, fs)
     f0 = get_f0_from_Hps(Xb, fs, order=4)
     return f0, time_in_sec
 
 
 # --- C.1 ---
 def extract_rms(xb):
-    rms = np.maximum(
-        20 * np.log10(np.sqrt(np.mean(xb ** 2, axis=-1))),
-        DB_TRUNCATION_THRESHOLD,
-    )
+    rms = np.maximum(20 * np.log10(np.sqrt(np.mean(xb ** 2, axis=-1))), DB_TRUNCATION_THRESHOLD)
     return rms
 
 
 # --- C.2 ---
 def create_voicing_mask(rmsDb, thresholdDb):
-    return 0 + rmsDb >= thresholdDb
+    mask = 0 + (rmsDb >= thresholdDb)
+    return mask
 
 
 # --- C.3 ---
@@ -155,13 +151,15 @@ def apply_voicing_mask(f0, mask):
 # --- D.1 ---
 def eval_voiced_fp(estimation, annotation):
     # false positive: Actually negative, predicted positive
-    return np.sum(estimation != 0) / np.sum(annotation == 0)
+    fp = np.sum(estimation != 0) / np.sum(annotation == 0)
+    return fp
 
 
 # --- D.2 ---
 def eval_voiced_fn(estimation, annotation):
     # false negative
-    return np.sum(estimation == 0) / np.sum(annotation != 0)
+    fn = np.sum(estimation == 0) / np.sum(annotation != 0)
+    return fn
 
 
 # --- D.3 ---
@@ -211,22 +209,19 @@ def executeassign3():
     plt.savefig("sig_error.png")
 
 
+
 # --- E.3 ---
 # rename run_evaluation function in the end
+
+# Report the results in the document
 def run_evaluation_fftmax(complete_path_to_data_folder):
     wavpath = np.array([])
     txtpath = np.array([])
     for full_filepath in os.listdir(complete_path_to_data_folder):
         if full_filepath.endswith(".wav"):
-            wav_path = np.append(
-                wavpath, complete_path_to_data_folder + full_filepath
-            )
-            txt_path = np.append(
-                txtpath,
-                complete_path_to_data_folder
-                + full_filepath.split(".")[0]
-                + ".f0.Corrected.txt",
-            )
+            wav_path = np.append(wavpath, complete_path_to_data_folder + full_filepath)
+            txt_path = np.append(txtpath,complete_path_to_data_folder + full_filepath.split(".")[0]
+                                 + ".f0.Corrected.txt")
 
     blockSize = 1024
     hopSize = 512
@@ -246,6 +241,7 @@ def run_evaluation_fftmax(complete_path_to_data_folder):
     return errCentRms
 
 
+# Report the results
 def run_evaluation_hps(complete_path_to_data_folder):
     wavpath = np.array([])
     txtpath = np.array([])
@@ -375,6 +371,37 @@ def track_pitch(x, blockSize, hopSize, fs, method, voicingThres=-40):
     f0Adj = apply_voicing_mask(f0, mask)
     return f0Adj, timeInSec
 
+def eval_track_pitch(complete_path_to_data_folder):
+    wavpath = np.array([])
+    txtpath = np.array([])
+    for full_filepath in os.listdir(complete_path_to_data_folder):
+        if full_filepath.endswith(".wav"):
+            wav_path = np.append(
+                wavpath, complete_path_to_data_folder + full_filepath
+            )
+            txt_path = np.append(
+                txtpath,
+                complete_path_to_data_folder
+                + full_filepath.split(".")[0]
+                + ".f0.Corrected.txt",
+            )
+
+    blockSize = 1024
+    hopSize = 512
+    errCentRms = np.zeros((3, 2))
+    for i, method in enumerate(['acf', 'max', 'hps']):
+        for j,voicingThres in enumerate([-40, -20]):
+            all_estimates = np.array([])
+            all_groundtruths = np.array([])
+            for wavfile, txtfile in zip(wav_path, txt_path):
+                fs, x = tool_read_audio(wavfile)
+                file = np.loadtxt(txtfile)
+                groundtruths = file[:, 2]
+                estimates, timestamps = track_pitch(x, blockSize, hopSize, fs, method, voicingThres)
+                all_estimates = np.append(all_estimates, estimates)
+                all_groundtruths = np.append(all_groundtruths, groundtruths)
+            errCentRms[i, j] = eval_pitchtrack_v2(all_estimates, all_groundtruths)
+    return errCentRms
 
 if __name__ == "__main__":
     # executeassign3()
