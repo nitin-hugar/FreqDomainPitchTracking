@@ -275,11 +275,11 @@ def run_evaluation_hps(complete_path_to_data_folder):
 
 # Alex implementation of ACF
 def comp_acf(inputVector, bIsNormalized=True):
-    if bIsNormalized:
-        norm = np.dot(inputVector, inputVector)
-    else:
-        norm = 1
-    afCorr = np.correlate(inputVector, inputVector, "full") / norm
+    # if bIsNormalized:
+    #     norm = np.dot(inputVector, inputVector)
+    # else:
+    #     norm = 1
+    afCorr = np.correlate(inputVector, inputVector, "full")  # / norm
     afCorr = afCorr[np.arange(inputVector.size - 1, afCorr.size)]
     return afCorr
 
@@ -339,12 +339,15 @@ def comp_amdf(inputVector):
     return g
 
 def amdf_weighted_acf(inputVector, bIsNormalized=True):
+    if bIsNormalized:
+        norm = np.dot(inputVector, inputVector)
+    else:
+        norm = 1
     alpha = 1
     r = comp_acf(inputVector)
     g = comp_amdf(inputVector)
     r_weighted = r/(g + alpha)
-    if bIsNormalized:
-        r_weighted =
+    r_weighted = r_weighted/norm # apply normalization
     return r_weighted
 
 
