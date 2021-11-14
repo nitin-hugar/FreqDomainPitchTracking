@@ -275,10 +275,10 @@ def run_evaluation_hps(complete_path_to_data_folder):
 
 # Alex implementation of ACF
 def comp_acf(inputVector, bIsNormalized=True):
-    if bIsNormalized:
-        norm = np.dot(inputVector, inputVector)
-    else:
-        norm = 1
+    # if bIsNormalized:
+    #     norm = np.dot(inputVector, inputVector)
+    # else:
+    #     norm = 1
     afCorr = np.correlate(inputVector, inputVector, "full")  # / norm
     afCorr = afCorr[np.arange(inputVector.size - 1, afCorr.size)]
     return afCorr
@@ -339,22 +339,26 @@ def comp_amdf(inputVector):
     return g
 
 def amdf_weighted_acf(inputVector, bIsNormalized=True):
-    # if bIsNormalized:
-    #     norm = np.dot(inputVector, inputVector)
-    # else:
-    #     norm = 1
+    if bIsNormalized:
+        norm = np.dot(inputVector, inputVector)
+    else:
+        norm = 1
     alpha = 1
     r = comp_acf(inputVector)
     g = comp_amdf(inputVector)
     r_weighted = r/(g + alpha)
+    r_weighted = r_weighted/norm
     return r_weighted
 
 def preprocess_audio(x):
     """
     Add filtering and centre clipping
     """
-    xc = centre_clip(x) # centre clpiing with a threshold of 1e-3
-    return xc
+    clip_threshold = 0.3 * np.max(x)
+    x_c = centre_clip(x, clip_threshold)
+    ## Add filtering
+
+    return x_c
 
 def track_pitch_mod(x, blockSize, hopSize, fs):
     """
@@ -406,6 +410,11 @@ def eval_track_pitch(complete_path_to_data_folder):
                 all_groundtruths = np.append(all_groundtruths, groundtruths)
             errCentRms[i, j] = eval_pitchtrack_v2(all_estimates, all_groundtruths)
     return errCentRms
+
+def track_pitch_mod(x, blockSize, hopSize, fs):
+    x_c = preprocess_audio(x)
+    xb, timeInSecs = block_audio(x_c, blockSize, hopSize, fs)
+    for block in xb:
 
 
 if __name__ == "__main__":
