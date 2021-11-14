@@ -1,6 +1,7 @@
 from typing import Tuple
 import numpy as np
 import scipy.io.wavfile
+import scipy.signal
 from matplotlib import pyplot as plt
 import os.path
 from glob import glob
@@ -131,7 +132,10 @@ def track_pitch_hps(x, blockSize, hopSize, fs):
 
 # --- C.1 ---
 def extract_rms(xb):
-    rms = np.maximum(20 * np.log10(np.sqrt(np.mean(xb ** 2, axis=-1))), DB_TRUNCATION_THRESHOLD)
+    rms = np.maximum(
+        20 * np.log10(np.sqrt(np.mean(xb ** 2, axis=-1))),
+        DB_TRUNCATION_THRESHOLD,
+    )
     return rms
 
 
@@ -274,36 +278,112 @@ def run_evaluation_hps(complete_path_to_data_folder):
 
 
 # Alex implementation of ACF
-def comp_acf(inputVector, bIsNormalized=True):
-    if bIsNormalized:
-        norm = np.dot(inputVector, inputVector)
-    else:
-        norm = 1
-    afCorr = np.correlate(inputVector, inputVector, "full") / norm
-    afCorr = afCorr[np.arange(inputVector.size - 1, afCorr.size)]
-    return afCorr
+# def comp_acf(inputVector, bIsNormalized=True):
+#     if bIsNormalized:
+#         norm = np.dot(inputVector, inputVector)
+#     else:
+#         norm = 1
+#     afCorr = np.correlate(inputVector, inputVector, "full") / norm
+#     afCorr = afCorr[np.arange(inputVector.size - 1, afCorr.size)]
+#     return afCorr
 
 
-def get_f0_from_acf(r, fs):
-    eta_min = 1
-    afDeltaCorr = np.diff(r)
-    eta_tmp = np.argmax(afDeltaCorr > 0)
-    eta_min = np.max([eta_min, eta_tmp])
-    f = np.argmax(r[np.arange(eta_min + 1, r.size)])
-    f = fs / (f + eta_min + 1)
-    return f
+# def get_f0_from_acf(r, fs):
+#     eta_min = 1
+#     afDeltaCorr = np.diff(r)
+#     eta_tmp = np.argmax(afDeltaCorr > 0)
+#     eta_min = np.max([eta_min, eta_tmp])
+#     f = np.argmax(r[np.arange(eta_min + 1, r.size)])
+#     f = fs / (f + eta_min + 1)
+#     return f
+
+# yet another E.5
+def get_f0_from_acf(corr, fs):
+    # takes the output of comp_acf and computes and returns the fundamental
+    # frequency f0 of that block in Hz.
+    # TODO what if corr is all zero?
+    # TODO what if fs % f0 != 0?
+
+    # still use monotonic stack to solve this.
+    def calc_view_range(x):
+        stack = []  # (index, value)
+        view_range_l = [0] * len(corr)  # leftmost index of samples < cur
+        view_range_r = [len(corr)] * len(
+            corr
+        )  # rightmost index of samples < cur
+
+        for i, val in enumerate(x):
+            while stack and val > stack[-1][1]:
+                j, _ = stack.pop()
+                view_range_r[j] = i
+            view_range_l[i] = 0 if not stack else stack[-1][0] + 1  # [l, r)
+            stack.append(
+                (i, val)
+            )  # the stack would be monotonically decreasing
+
+        view_range = [
+            (i, l, r)
+            for i, (l, r) in enumerate(zip(view_range_l, view_range_r))
+        ]
+        view_range.sort(
+            key=lambda x: x[0]
+        )  # the lower frequency, the more likely
+        view_range.sort(
+            key=lambda x: x[2] - x[1], reverse=True
+        )  # the bigger view the more likely.
+        return view_range
+
+    # get first local minimum, and the first peak after this sample would be
+    # viewed as f0.
+    local_min = np.logical_and(
+        ((-corr)[:-1] > (-corr)[1:])[1:], ((-corr)[:-1] < (-corr)[1:])[:-1]
+    )
+    first_local_minimum = np.argmax(local_min, axis=0)
+
+    view_range = calc_view_range(corr)
+    for i, _, _ in view_range:
+        if i > first_local_minimum:
+            return fs / i
+
+    return 0
+
+
+def pad_with_trailing_zero(x: T, target_len: int):
+    new_x = np.zeros((*x.shape[:-1], target_len))
+    new_x[..., : x.shape[-1]] = x
+    return new_x
+
+
+def comp_acf(inputVector, bIsNormalized):
+    n = len(inputVector)
+    x = pad_with_trailing_zero(inputVector, n << 1)
+    X = np.fft.fft(x)
+    A = X * np.conj(X)
+    a = np.abs(np.fft.ifft(A)[..., :n])
+
+    if bIsNormalized and a[0] > 0:
+        a /= a[0]
+    return a
+
+
+def comp_acf_direct(inputVector, bIsNormalized):
+    n = len(inputVector)
+    result = np.fromiter(
+        (np.sum(inputVector[k:] * inputVector[: n - k]) for k in range(n)),
+        dtype=float,
+    )
+    if bIsNormalized and result[0] > 0:
+        result /= result[0]
+    return result
 
 
 def track_pitch_acf(x, blockSize, hopSize, fs):
-    # get blocks
-    [xb, t] = block_audio(x, blockSize, hopSize, fs)
-    # init result
-    f0 = np.zeros(xb.shape[0])
-    # compute acf
-    for n in range(0, xb.shape[0]):
-        r = comp_acf(xb[n, :])
-        f0[n] = get_f0_from_acf(r, fs)
-    return f0, t
+    xb, time_in_sec = block_audio(x, blockSize, hopSize, fs)
+    f0 = np.zeros_like(time_in_sec)
+    for i, row in enumerate(xb):
+        corr = comp_acf(row, True)
+        f0[i] = get_f0_from_acf(corr, fs)
+    return f0, time_in_sec
 
 
 # --- E.6 ---
@@ -386,7 +466,7 @@ def eval_track_pitch(complete_path_to_data_folder):
     blockSize = 1024
     hopSize = 512
     errCentRms = np.zeros((3, 2, 3))
-    for i, method in enumerate(['acf', 'max', 'hps']):
+    for i, method in enumerate(["acf", "max", "hps"]):
         for j, voicingThres in enumerate([-40, -20]):
             all_estimates = np.array([])
             all_groundtruths = np.array([])
@@ -394,14 +474,148 @@ def eval_track_pitch(complete_path_to_data_folder):
                 fs, x = tool_read_audio(wavfile)
                 file = np.loadtxt(txtfile)
                 groundtruths = file[:, 2]
-                estimates, timestamps = track_pitch(x, blockSize, hopSize, fs, method, voicingThres)
+                estimates, timestamps = track_pitch(
+                    x, blockSize, hopSize, fs, method, voicingThres
+                )
                 all_estimates = np.append(all_estimates, estimates)
                 all_groundtruths = np.append(all_groundtruths, groundtruths)
-            errCentRms[i, j] = eval_pitchtrack_v2(all_estimates, all_groundtruths)
+            errCentRms[i, j] = eval_pitchtrack_v2(
+                all_estimates, all_groundtruths
+            )
     return errCentRms
 
 
+# bonus
+def apply_band_pass_filter(x: T, fs: int):
+    bp_filter = scipy.signal.butter(N=20, Wn=(50, 2000), btype="bandpass", output="sos", fs=fs)
+    bp_x = scipy.signal.sosfilt(bp_filter, x)
+    return bp_x
+
+# bonus
+def get_f0_from_acf_mod(corr, fs):
+    # takes the output of comp_acf and computes and returns the fundamental
+    # frequency f0 of that block in Hz.
+    # TODO what if corr is all zero?
+    # TODO what if fs % f0 != 0?
+
+    # still use monotonic stack to solve this.
+    def calc_view_range(x):
+        stack = []  # (index, value)
+        view_range_l = [0] * len(corr)  # leftmost index of samples < cur
+        view_range_r = [len(corr)] * len(
+            corr
+        )  # rightmost index of samples < cur
+
+        for i, val in enumerate(x):
+            while stack and val > stack[-1][1]:
+                j, _ = stack.pop()
+                view_range_r[j] = i
+            view_range_l[i] = 0 if not stack else stack[-1][0] + 1  # [l, r)
+            stack.append(
+                (i, val)
+            )  # the stack would be monotonically decreasing
+
+        view_range = [
+            (i, l, r)
+            for i, (l, r) in enumerate(zip(view_range_l, view_range_r))
+        ]
+        view_range.sort(
+            key=lambda x: x[0]
+        )  # the lower frequency, the more likely
+        view_range.sort(
+            key=lambda x: x[2] - x[1], reverse=True
+        )  # the bigger view the more likely.
+        return view_range
+
+    # get first local minimum, and the first peak after this sample would be
+    # viewed as f0.
+    local_min = np.logical_and(
+        ((-corr)[:-1] > (-corr)[1:])[1:], ((-corr)[:-1] < (-corr)[1:])[:-1]
+    )
+    first_local_minimum = np.argmax(local_min, axis=0)
+
+    view_range = calc_view_range(corr)
+    for i, _, _ in view_range:
+        if i > first_local_minimum:
+            return i
+
+    return 0
+
+# bonus
+def track_pitch_mod(x, blockSize, hopSize, fs):
+    # - [x] qxy preprocessing, lp=50 and hp=2000
+    # - [x] qxy n log n Autocorrelation
+    # - [x] qxy 3.5 parabolic interpolation
+    bp_x = apply_band_pass_filter(x, fs)
+    xb, timeInSec = block_audio(bp_x, blockSize, hopSize, fs)
+    f0 = np.zeros_like(timeInSec)
+    for i, row in enumerate(xb):
+        corr = comp_acf(row, True)
+        f0_index = get_f0_from_acf_mod(corr, fs)
+        
+        # apply 3.5 parabolic interpolation
+        if 1 <= f0_index < blockSize - 1:
+            y1, y2, y3 = map(corr.__getitem__, range(f0_index-1, f0_index+2))
+            delta_x_max = 0.5 + 0.5 * ((y1 - y2) * (y2 - y3) * (y3 - y1)) / (2 * y2 - y1 - y3)
+            f0[i] = fs / (f0_index + delta_x_max)
+        else:
+            f0[i] = 0
+    return f0, timeInSec
+
+
+# bonus
+def eval_pitchtrack(estimateInHz, groundtruthInHz):
+    # return RMS of cent
+    res = 0
+    for a, b in zip(estimateInHz, groundtruthInHz):
+        if a and b:
+            res += (1200 * np.log2(a / b)) ** 2
+    return (res / len(estimateInHz)) ** 0.5
+
+
+# bonus
+def run_evaluation(complete_path_to_data_folder):
+    rms_s, n_s = [], []
+    for full_filename in glob("%s/*.wav" % complete_path_to_data_folder):
+        filepath, filename_ext = os.path.split(full_filename)
+        filename, ext = os.path.splitext(filename_ext)
+        fs, x = scipy.io.wavfile.read(full_filename)
+
+        # first calculate f0
+        for track_pitch_func in (
+            track_pitch_acf, track_pitch_fftmax, track_pitch_hps, track_pitch_mod
+        ):
+            f0, _ = track_pitch_func(x, BLOCK_SIZE, HOP_SIZE, fs)
+            xb, _ = block_audio(x, BLOCK_SIZE, HOP_SIZE, fs)
+            rms = extract_rms(xb)
+            voicing_mask = create_voicing_mask(rms, -30)
+            masked_f0 = f0 * voicing_mask
+
+            # then read file
+            ground_truth_f0, ground_truth_time_in_sec = [], []
+            with open("%s/%s.f0.Corrected.txt" % (filepath, filename)) as f:
+                for line in f.readlines():
+                    onset_seconds, _, pitch_frequency, _ = map(float, line.split())
+                    ground_truth_f0.append(pitch_frequency)
+                    ground_truth_time_in_sec.append(onset_seconds)
+            ground_truth_f0 = np.array(ground_truth_f0)
+            ground_truth_time_in_sec = np.array(ground_truth_time_in_sec)
+
+            rms_s.append(eval_pitchtrack(masked_f0[:-1], ground_truth_f0[1:]))
+            n_s.append(len(f0) - 1)
+
+            print("RMS of %s on %s: %.5f" % (filename, track_pitch_func.__name__, rms_s[-1]))
+
+    overall_err_cent_rms = np.sqrt(
+        sum(r ** 2 * n for r, n in zip(rms_s, n_s)) / sum(n_s)
+    )
+    print("Overall RMS: %.5f" % overall_err_cent_rms)
+    return overall_err_cent_rms
+
 if __name__ == "__main__":
+
+    run_evaluation("./trainData/")
+
     # executeassign3()
 
     # fs, x = tool_read_audio("trainData/01-D_AMairena.wav")
@@ -411,22 +625,23 @@ if __name__ == "__main__":
     #     plt.plot(f0Adj)
     #     plt.show()
 
-    print(eval_track_pitch("./trainData/"))
+    # print(eval_track_pitch("./trainData/"))
+
+    # fs, x = tool_read_audio("trainData/01-D_AMairena.wav")
+    # f0, timeInSec = track_pitch_mod(x, 1024, 512, fs)
+    # plt.plot(f0)
+
     # for full_filename in glob("./trainData/*.wav"):
     #     filepath, filename_ext = os.path.split(full_filename)
 
     #     fs, x = tool_read_audio(full_filename)
     #     xb, time_in_sec = block_audio(x, BLOCK_SIZE, HOP_SIZE, fs)
     #     Xb, f_in_hz = compute_spectrogram(xb, fs)
-    #     f0_fftmax, _ = track_pitch_fftmax(x, BLOCK_SIZE, HOP_SIZE, fs)
-    #     f0_hps, _ = track_pitch_hps(x, BLOCK_SIZE, HOP_SIZE, fs)
-    #     rms = extract_rms(xb)
-    #     voicing_mask = create_voicing_mask(rms, -30)
-    #     plt.plot(time_in_sec, rms)
-    #     plt.plot(time_in_sec, voicing_mask)
-    #     plt.show()
-    #     plt.clf()
-    #     print(Xb.shape, f0_fftmax.shape, f0_hps.shape)
+    #     # plt.plot(time_in_sec, rms)
+    #     # plt.plot(time_in_sec, voicing_mask)
+    #     # plt.show()
+    #     # plt.clf()
+    #     # print(Xb.shape, f0_fftmax.shape, f0_hps.shape)
 
     #     plt.figure(figsize=(36, 6))
     #     # plt.subplot(2, 1, 1)
@@ -438,6 +653,8 @@ if __name__ == "__main__":
     #     )
     #     plt.plot(time_in_sec, f0_fftmax, label="estimated f0 (fft max)")
     #     plt.plot(time_in_sec, f0_hps, label="estimated f0 (hps)")
+    #     plt.plot(time_in_sec, f0_acf, label="estimated f0 (acf)")
+    #     plt.plot(time_in_sec, f0_mod, label="estimated f0 (acf mod)")
     #     plt.ylim(bottom=10)
     #     plt.yscale("log")
     #     plt.ylabel("Magnitude Response [Hz]")
@@ -446,3 +663,4 @@ if __name__ == "__main__":
     #     plt.colorbar(format="%+2.0f dB", pad=0.01)
     #     plt.title("block size = %d, hop size = %d" % (BLOCK_SIZE, HOP_SIZE))
     #     plt.show()
+    #     break
