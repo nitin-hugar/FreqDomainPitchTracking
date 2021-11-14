@@ -132,7 +132,10 @@ def track_pitch_hps(x, blockSize, hopSize, fs):
 
 # --- C.1 ---
 def extract_rms(xb):
-    rms = np.maximum(20 * np.log10(np.sqrt(np.mean(xb ** 2, axis=-1))), DB_TRUNCATION_THRESHOLD)
+    rms = np.maximum(
+        20 * np.log10(np.sqrt(np.mean(xb ** 2, axis=-1))),
+        DB_TRUNCATION_THRESHOLD,
+    )
     return rms
 
 
@@ -209,7 +212,6 @@ def executeassign3():
     plt.savefig("sig_error.png")
 
 
-
 # --- E.3 ---
 # rename run_evaluation function in the end
 
@@ -219,9 +221,15 @@ def run_evaluation_fftmax(complete_path_to_data_folder):
     txtpath = np.array([])
     for full_filepath in os.listdir(complete_path_to_data_folder):
         if full_filepath.endswith(".wav"):
-            wav_path = np.append(wavpath, complete_path_to_data_folder + full_filepath)
-            txt_path = np.append(txtpath,complete_path_to_data_folder + full_filepath.split(".")[0]
-                                 + ".f0.Corrected.txt")
+            wav_path = np.append(
+                wavpath, complete_path_to_data_folder + full_filepath
+            )
+            txt_path = np.append(
+                txtpath,
+                complete_path_to_data_folder
+                + full_filepath.split(".")[0]
+                + ".f0.Corrected.txt",
+            )
 
     blockSize = 1024
     hopSize = 512
@@ -390,19 +398,31 @@ def eval_track_pitch(complete_path_to_data_folder):
     blockSize = 1024
     hopSize = 512
     errCentRms = np.zeros((3, 2, 3))
-    for i, method in enumerate(['acf', 'max', 'hps']):
-        for j,voicingThres in enumerate([-40, -20]):
+    for i, method in enumerate(["acf", "max", "hps"]):
+        for j, voicingThres in enumerate([-40, -20]):
             all_estimates = np.array([])
             all_groundtruths = np.array([])
             for wavfile, txtfile in zip(wav_path, txt_path):
                 fs, x = tool_read_audio(wavfile)
                 file = np.loadtxt(txtfile)
                 groundtruths = file[:, 2]
-                estimates, timestamps = track_pitch(x, blockSize, hopSize, fs, method, voicingThres)
+                estimates, timestamps = track_pitch(
+                    x, blockSize, hopSize, fs, method, voicingThres
+                )
                 all_estimates = np.append(all_estimates, estimates)
                 all_groundtruths = np.append(all_groundtruths, groundtruths)
-            errCentRms[i, j] = eval_pitchtrack_v2(all_estimates, all_groundtruths)
+            errCentRms[i, j] = eval_pitchtrack_v2(
+                all_estimates, all_groundtruths
+            )
     return errCentRms
+
+
+def track_pitch_mod(x, blockSize, hopSize, fs):
+    # preprocessing, lp=50 and hp=2000
+    # n log n Autocorrelation
+    # 
+
+
 
 if __name__ == "__main__":
     # executeassign3()
