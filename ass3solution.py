@@ -5,7 +5,6 @@ from matplotlib import pyplot as plt
 import os.path
 from glob import glob
 
-
 T = np.ndarray  # for autocomplete engine, will be deleted before submission
 BLOCK_SIZE = 1 << 10  # SHOULD NOT BE USED IN FUNCTION DEFINIION
 HOP_SIZE = BLOCK_SIZE >> 2
@@ -29,7 +28,7 @@ def block_audio(x, blockSize, hopSize, fs) -> Tuple[T, T]:
         # i-th block
         l = i * hopSize
         time_in_sec[i] = l / fs
-        xb[i] = x[l : l + blockSize]
+        xb[i] = x[l: l + blockSize]
 
     return xb, time_in_sec
 
@@ -209,7 +208,6 @@ def executeassign3():
     plt.savefig("sig_error.png")
 
 
-
 # --- E.3 ---
 # rename run_evaluation function in the end
 
@@ -220,7 +218,7 @@ def run_evaluation_fftmax(complete_path_to_data_folder):
     for full_filepath in os.listdir(complete_path_to_data_folder):
         if full_filepath.endswith(".wav"):
             wav_path = np.append(wavpath, complete_path_to_data_folder + full_filepath)
-            txt_path = np.append(txtpath,complete_path_to_data_folder + full_filepath.split(".")[0]
+            txt_path = np.append(txtpath, complete_path_to_data_folder + full_filepath.split(".")[0]
                                  + ".f0.Corrected.txt")
 
     blockSize = 1024
@@ -275,82 +273,37 @@ def run_evaluation_hps(complete_path_to_data_folder):
     return errCentRms
 
 
-# yet another E.5
-def get_f0_from_acr(corr, fs):
-    # takes the output of comp_acf and computes and returns the fundamental
-    # frequency f0 of that block in Hz.
-    # TODO what if corr is all zero?
-    # TODO what if fs % f0 != 0?
-
-    # still use monotonic stack to solve this.
-    def calc_view_range(x):
-        stack = []  # (index, value)
-        view_range_l = [0] * len(corr)  # leftmost index of samples < cur
-        view_range_r = [len(corr)] * len(
-            corr
-        )  # rightmost index of samples < cur
-
-        for i, val in enumerate(x):
-            while stack and val > stack[-1][1]:
-                j, _ = stack.pop()
-                view_range_r[j] = i
-            view_range_l[i] = 0 if not stack else stack[-1][0] + 1  # [l, r)
-            stack.append(
-                (i, val)
-            )  # the stack would be monotonically decreasing
-
-        view_range = [
-            (i, l, r)
-            for i, (l, r) in enumerate(zip(view_range_l, view_range_r))
-        ]
-        view_range.sort(
-            key=lambda x: x[0]
-        )  # the lower frequency, the more likely
-        view_range.sort(
-            key=lambda x: x[2] - x[1], reverse=True
-        )  # the bigger view the more likely.
-        return view_range
-
-    # get first local minimum, and the first peak after this sample would be
-    # viewed as f0.
-    local_min = np.logical_and(
-        ((-corr)[:-1] > (-corr)[1:])[1:], ((-corr)[:-1] < (-corr)[1:])[:-1]
-    )
-    first_local_minimum = np.argmax(local_min, axis=0)
-    # neg_view_range = calc_view_range(-corr)
-    # first_local_minimum = 0
-    # for i, _, _ in neg_view_range:
-    #     if i:
-    #         first_local_minimum = i
-    #         break
-
-    view_range = calc_view_range(corr)
-    for i, _, _ in view_range:
-        if i > first_local_minimum:
-            return fs / i
-
-    return 0
+# Alex implementation of ACF
+def comp_acf(inputVector, bIsNormalized=True):
+    if bIsNormalized:
+        norm = np.dot(inputVector, inputVector)
+    else:
+        norm = 1
+    afCorr = np.correlate(inputVector, inputVector, "full") / norm
+    afCorr = afCorr[np.arange(inputVector.size - 1, afCorr.size)]
+    return afCorr
 
 
-def comp_acf(inputVector, bIsNormalized):
-    n = len(inputVector)
-    result = np.fromiter(
-        (np.sum(inputVector[k:] * inputVector[: n - k]) for k in range(n)),
-        dtype=float,
-    )
-    if bIsNormalized and result[0] > 0:
-        result /= result[0]
-    return result
+def get_f0_from_acf(r, fs):
+    eta_min = 1
+    afDeltaCorr = np.diff(r)
+    eta_tmp = np.argmax(afDeltaCorr > 0)
+    eta_min = np.max([eta_min, eta_tmp])
+    f = np.argmax(r[np.arange(eta_min + 1, r.size)])
+    f = fs / (f + eta_min + 1)
+    return f
 
 
-# --- E.5 ---
 def track_pitch_acf(x, blockSize, hopSize, fs):
-    xb, time_in_sec = block_audio(x, blockSize, hopSize, fs)
-    f0 = np.zeros_like(time_in_sec)
-    for i, row in enumerate(xb):
-        corr = comp_acf(row, True)
-        f0[i] = get_f0_from_acr(corr, fs)
-    return f0, time_in_sec
+    # get blocks
+    [xb, t] = block_audio(x, blockSize, hopSize, fs)
+    # init result
+    f0 = np.zeros(xb.shape[0])
+    # compute acf
+    for n in range(0, xb.shape[0]):
+        r = comp_acf(xb[n, :])
+        f0[n] = get_f0_from_acf(r, fs)
+    return f0, t
 
 
 # --- E.6 ---
@@ -391,7 +344,7 @@ def eval_track_pitch(complete_path_to_data_folder):
     hopSize = 512
     errCentRms = np.zeros((3, 2, 3))
     for i, method in enumerate(['acf', 'max', 'hps']):
-        for j,voicingThres in enumerate([-40, -20]):
+        for j, voicingThres in enumerate([-40, -20]):
             all_estimates = np.array([])
             all_groundtruths = np.array([])
             for wavfile, txtfile in zip(wav_path, txt_path):
@@ -403,6 +356,7 @@ def eval_track_pitch(complete_path_to_data_folder):
                 all_groundtruths = np.append(all_groundtruths, groundtruths)
             errCentRms[i, j] = eval_pitchtrack_v2(all_estimates, all_groundtruths)
     return errCentRms
+
 
 if __name__ == "__main__":
     # executeassign3()
