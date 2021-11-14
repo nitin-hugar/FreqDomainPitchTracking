@@ -354,15 +354,12 @@ def pad_with_trailing_zero(x: T, target_len: int):
     return new_x
 
 
-def comp_acf(inputVector, bIsNormalized):
+def comp_acf(inputVector):
     n = len(inputVector)
     x = pad_with_trailing_zero(inputVector, n << 1)
     X = np.fft.fft(x)
     A = X * np.conj(X)
     a = np.abs(np.fft.ifft(A)[..., :n])
-
-    if bIsNormalized and a[0] > 0:
-        a /= a[0]
     return a
 
 
@@ -381,7 +378,7 @@ def track_pitch_acf(x, blockSize, hopSize, fs):
     xb, time_in_sec = block_audio(x, blockSize, hopSize, fs)
     f0 = np.zeros_like(time_in_sec)
     for i, row in enumerate(xb):
-        corr = comp_acf(row, True)
+        corr = comp_acf(row)
         f0[i] = get_f0_from_acf(corr, fs)
     return f0, time_in_sec
 
@@ -418,34 +415,17 @@ def comp_amdf(inputVector):
         g[n] = np.sum(y - np.roll(y, -n))
     return g
 
+
 def amdf_weighted_acf(inputVector, bIsNormalized=True):
     alpha = 1
     r = comp_acf(inputVector)
     g = comp_amdf(inputVector)
     r_weighted = r/(g + alpha)
     if bIsNormalized:
-        r_weighted =
+        r_weighted_max = np.max(r_weighted)
+        if r_weighted_max:
+            r_weighted /= r_weighted_max
     return r_weighted
-
-
-
-def track_pitch_mod(x, blockSize, hopSize, fs):
-    """
-    de Obaldía, C., & Zölzer, U. (2019). IMPROVING MONOPHONIC PITCH DETECTION USING THE ACF AND SIMPLE HEURISTICS.
-
-    Step1:  Centre clip with threshold 1e-3
-    Step2:  Highpass signal at 50Hz
-    Step3:  Lowpass signal at 2000Hz
-    Step4:  Blocking and Windowing
-    Step5:  ACF
-    Step6:  Apply AMDF weighting function
-    Step7:  Output is normalized to the maximum of the resulting signal
-    Step8:
-    """
-    xb_clipped = centre_clip(x)
-
-
-
 
 
 def eval_track_pitch(complete_path_to_data_folder):
@@ -543,14 +523,24 @@ def get_f0_from_acf_mod(corr, fs):
 
 # bonus
 def track_pitch_mod(x, blockSize, hopSize, fs):
-    # - [x] qxy preprocessing, lp=50 and hp=2000
-    # - [x] qxy n log n Autocorrelation
-    # - [x] qxy 3.5 parabolic interpolation
+    """
+    de Obaldía, C., & Zölzer, U. (2019). IMPROVING MONOPHONIC PITCH DETECTION USING THE ACF AND SIMPLE HEURISTICS.
+
+    Step1:  Centre clip with threshold 1e-3
+    Step2:  Highpass signal at 50Hz
+    Step3:  Lowpass signal at 2000Hz
+    Step4:  Blocking and Windowing
+    Step5:  ACF
+    Step6:  Apply AMDF weighting function
+    Step7:  Output is normalized to the maximum of the resulting signal
+    Step8:
+    """
+    xb_clipped = centre_clip(x)
     bp_x = apply_band_pass_filter(x, fs)
     xb, timeInSec = block_audio(bp_x, blockSize, hopSize, fs)
     f0 = np.zeros_like(timeInSec)
     for i, row in enumerate(xb):
-        corr = comp_acf(row, True)
+        corr = amdf_weighted_acf(row)
         f0_index = get_f0_from_acf_mod(corr, fs)
         
         # apply 3.5 parabolic interpolation
