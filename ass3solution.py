@@ -404,7 +404,7 @@ def track_pitch(x, blockSize, hopSize, fs, method, voicingThres=-40):
 # --- BONUS ---
 
 def centre_clip(x , clip_threshold=1e-3):
-    x_clipped = (abs(x) > clip_threshold).astype(np.int32) * x
+    x_clipped = np.clip(x, -clip_threshold, clip_threshold)
     return x_clipped
 
 def comp_amdf(inputVector):
