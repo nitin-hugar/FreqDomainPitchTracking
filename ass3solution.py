@@ -324,6 +324,49 @@ def track_pitch(x, blockSize, hopSize, fs, method, voicingThres=-40):
     f0Adj = apply_voicing_mask(f0, mask)
     return f0Adj, timeInSec
 
+# --- BONUS ---
+
+def centre_clip(x , clip_threshold=1e-3):
+    x_clipped = (abs(x) > clip_threshold).astype(np.int32) * x
+    return x_clipped
+
+def comp_amdf(inputVector):
+    y = np.zeros(inputVector.shape[0] * 2)
+    y[:inputVector.shape[0]] = inputVector
+    g = np.zeros(inputVector.shape[0])
+    for n in range(inputVector.shape[0]):
+        g[n] = np.sum(y - np.roll(y, -n))
+    return g
+
+def amdf_weighted_acf(inputVector, bIsNormalized=True):
+    alpha = 1
+    r = comp_acf(inputVector)
+    g = comp_amdf(inputVector)
+    r_weighted = r/(g + alpha)
+    if bIsNormalized:
+        r_weighted =
+    return r_weighted
+
+
+
+def track_pitch_mod(x, blockSize, hopSize, fs):
+    """
+    de Obaldía, C., & Zölzer, U. (2019). IMPROVING MONOPHONIC PITCH DETECTION USING THE ACF AND SIMPLE HEURISTICS.
+
+    Step1:  Centre clip with threshold 1e-3
+    Step2:  Highpass signal at 50Hz
+    Step3:  Lowpass signal at 2000Hz
+    Step4:  Blocking and Windowing
+    Step5:  ACF
+    Step6:  Apply AMDF weighting function
+    Step7:  Output is normalized to the maximum of the resulting signal
+    Step8:
+    """
+    xb_clipped = centre_clip(x)
+
+
+
+
 
 def eval_track_pitch(complete_path_to_data_folder):
     wavpath = np.array([])
