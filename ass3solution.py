@@ -275,10 +275,10 @@ def run_evaluation_hps(complete_path_to_data_folder):
 
 # Alex implementation of ACF
 def comp_acf(inputVector, bIsNormalized=True):
-    # if bIsNormalized:
-    #     norm = np.dot(inputVector, inputVector)
-    # else:
-    #     norm = 1
+    if bIsNormalized:
+        norm = np.dot(inputVector, inputVector)
+    else:
+        norm = 1
     afCorr = np.correlate(inputVector, inputVector, "full")  # / norm
     afCorr = afCorr[np.arange(inputVector.size - 1, afCorr.size)]
     return afCorr
@@ -335,22 +335,26 @@ def comp_amdf(inputVector):
     y[:inputVector.shape[0]] = inputVector
     g = np.zeros(inputVector.shape[0])
     for n in range(inputVector.shape[0]):
-        g[n] = np.sum(y - np.roll(y, -n))
+        g[n] = np.sum(y - np.roll(y, n))
     return g
 
 def amdf_weighted_acf(inputVector, bIsNormalized=True):
-    if bIsNormalized:
-        norm = np.dot(inputVector, inputVector)
-    else:
-        norm = 1
+    # if bIsNormalized:
+    #     norm = np.dot(inputVector, inputVector)
+    # else:
+    #     norm = 1
     alpha = 1
     r = comp_acf(inputVector)
     g = comp_amdf(inputVector)
     r_weighted = r/(g + alpha)
-    r_weighted = r_weighted/norm # apply normalization
     return r_weighted
 
-
+def preprocess_audio(x):
+    """
+    Add filtering and centre clipping
+    """
+    xc = centre_clip(x) # centre clpiing with a threshold of 1e-3
+    return xc
 
 def track_pitch_mod(x, blockSize, hopSize, fs):
     """
@@ -407,7 +411,7 @@ def eval_track_pitch(complete_path_to_data_folder):
 if __name__ == "__main__":
     # executeassign3()
 
-    # fs, x = tool_read_audio("trainData/01-D_AMairena.wav")
+
     # for method in ("max", "hps"):
     #     f0Adj, timeInSec = track_pitch(x, 1024, 512, fs, method, -40)
     #     plt.clf()
