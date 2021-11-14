@@ -335,7 +335,7 @@ def comp_amdf(inputVector):
     y[:inputVector.shape[0]] = inputVector
     g = np.zeros(inputVector.shape[0])
     for n in range(inputVector.shape[0]):
-        g[n] = np.sum(y - np.roll(y, n))
+        g[n] = np.sum(y - np.roll(y, -n))
     return g
 
 def amdf_weighted_acf(inputVector, bIsNormalized=True):
