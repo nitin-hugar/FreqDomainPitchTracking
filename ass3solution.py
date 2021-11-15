@@ -89,7 +89,7 @@ def magnitude_to_db(X_b):
 
 
 # --- A.1 ---
-def compute_spectrogram(xb: T, fs: int):
+def compute_spectrogram(xb, fs):
     # xb.shape = (num_of_blocks, block_size)
     block_size = xb.shape[-1]
     X = fft_block(xb)  # shape: (num_of_blocks, (block_size >> 1) + 1)
@@ -100,7 +100,7 @@ def compute_spectrogram(xb: T, fs: int):
 
 
 # --- A.2 ---
-def track_pitch_fftmax(x: T, blockSize: int, hopSize: int, fs: int):
+def track_pitch_fftmax(x, blockSize, hopSize, fs):
     xb, timeInSec = block_audio(x, blockSize, hopSize, fs)
     Xb, f_in_hz = compute_spectrogram(xb, fs)
     f0 = f_in_hz[np.argmax(Xb, axis=-1)]
@@ -319,7 +319,7 @@ def get_f0_from_acf(r, fs):
 
 
 # yet another E.5
-def pad_with_trailing_zero(x: T, target_len: int):
+def pad_with_trailing_zero(x, target_len):
     new_x = np.zeros((*x.shape[:-1], target_len))
     new_x[..., : x.shape[-1]] = x
     return new_x
@@ -384,7 +384,7 @@ def comp_amdf(inputVector):
     return g
 
 
-def comp_asdf(x: T):
+def comp_asdf(x):
     X = np.fft.fft(x)
     return 2 * (np.sum(x ** 2) - np.real(np.fft.ifft(X * np.conj(X))))
 
@@ -439,7 +439,7 @@ def eval_track_pitch(complete_path_to_data_folder):
 
 
 # bonus
-def apply_band_pass_filter(x: T, fs: int):
+def apply_band_pass_filter(x, fs):
     bp_filter = scipy.signal.butter(
         N=20, Wn=(50, 2000), btype="bandpass", output="sos", fs=fs
     )
