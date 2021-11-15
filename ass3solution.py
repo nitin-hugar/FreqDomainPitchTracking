@@ -4,6 +4,7 @@ import scipy.io.wavfile
 import scipy.signal
 from matplotlib import pyplot as plt
 import os.path
+import math
 from glob import glob
 
 T = np.ndarray  # for autocomplete engine, will be deleted before submission
@@ -12,26 +13,22 @@ HOP_SIZE = BLOCK_SIZE >> 1
 DB_TRUNCATION_THRESHOLD = -100
 
 
-# proudly plagiarized myself, again, by simply copying from assg 1.
-def block_audio(x, blockSize, hopSize, fs) -> Tuple[T, T]:
-    """plain implementation of spliting input signal into blocks of frames."""
+def  block_audio(x,blockSize,hopSize,fs):
+    # allocate memory
+    numBlocks = math.ceil(x.size / hopSize)
+    xb = np.zeros([numBlocks, blockSize])
+    # compute time stamps
+    t = (np.arange(0, numBlocks) * hopSize) / fs
 
-    # equivalent to num_of_blocks = ceil(x / hopSize)
-    num_of_blocks = len(x) // hopSize
-    if len(x) % hopSize:
-        num_of_blocks += 1
-    x = np.pad(x, (0, (num_of_blocks - 1) * hopSize + blockSize - len(x)))
+    x = np.concatenate((x, np.zeros(blockSize)),axis=0)
 
-    xb = np.zeros((num_of_blocks, blockSize))
-    time_in_sec = np.zeros((num_of_blocks,))
+    for n in range(0, numBlocks):
+        i_start = n * hopSize
+        i_stop = np.min([x.size - 1, i_start + blockSize - 1])
 
-    for i in range(num_of_blocks):
-        # i-th block
-        l = i * hopSize
-        time_in_sec[i] = l / fs
-        xb[i] = x[l : l + blockSize]
+        xb[n][np.arange(0,blockSize)] = x[np.arange(i_start, i_stop + 1)]
 
-    return xb, time_in_sec
+    return (xb,t)
 
 
 # plagiarized from alex
@@ -124,19 +121,40 @@ def get_f0_from_Hps(X, fs, order):
 
 # --- B.2 ---
 def track_pitch_hps(x, blockSize, hopSize, fs):
-    xb, time_in_sec = block_audio(x, blockSize, hopSize, fs)
-    Xb, f_in_hz = compute_spectrogram(xb, fs)
+    hp_filter = scipy.signal.butter(
+        N=20, Wn=50, btype="highpass", output="sos", fs=fs
+    )
+    hp_x = scipy.signal.sosfilt(hp_filter, x)
+    xb, timeInSec = block_audio(hp_x, blockSize, hopSize, fs)
+    Xb, fInHz = compute_spectrogram(xb, fs)
     f0 = get_f0_from_Hps(Xb, fs, order=4)
-    return f0, time_in_sec
+    return f0, timeInSec
 
 
 # --- C.1 ---
 def extract_rms(xb):
-    rms = np.maximum(
-        20 * np.log10(np.sqrt(np.mean(xb ** 2, axis=-1))),
-        DB_TRUNCATION_THRESHOLD,
-    )
-    return rms
+    return (FeatureTimeRms(xb))
+
+
+def FeatureTimeRms(xb):
+
+    # number of results
+    numBlocks = xb.shape[0]
+
+    # allocate memory
+    vrms = np.zeros(numBlocks)
+
+    for n in range(0, numBlocks):
+        # calculate the rms
+        vrms[n] = np.sqrt(np.dot(xb[n,:], xb[n,:]) / xb.shape[1])
+
+    # convert to dB
+    epsilon = 1e-5  # -100dB
+
+    vrms[vrms < epsilon] = epsilon
+    vrms = 20 * np.log10(vrms)
+
+    return (vrms)
 
 
 # --- C.2 ---
@@ -168,11 +186,7 @@ def eval_voiced_fn(estimation, annotation):
 # --- D.3 ---
 def eval_pitchtrack_v2(estimation, annotation):
     # return RMS of cent
-    err_cent_rms = 0
-    for a, b in zip(estimation, annotation):
-        if a and b:
-            err_cent_rms += (1200 * np.log2(a / b)) ** 2
-    err_cent_rms = (err_cent_rms / len(estimation)) ** 0.5
+    err_cent_rms = eval_pitchtrack(estimation, annotation)
     pfp = eval_voiced_fp(estimation, annotation)
     pfn = eval_voiced_fn(estimation, annotation)
     return err_cent_rms, pfp, pfn
@@ -192,7 +206,7 @@ def executeassign3():
         block_audio(ref_, BLOCK_SIZE, HOP_SIZE, fs)[0], axis=1
     )
 
-    f0_fftmax, time_in_sec = track_pitch_fftmax(sin_, BLOCK_SIZE, HOP_SIZE, fs)
+    f0_fftmax, time_in_sec = track_pitch_fftmax(sin_, 2048, 512, fs)
     f0_hps, _ = track_pitch_hps(sin_, BLOCK_SIZE, HOP_SIZE, fs)
     # plot
     fig, ax = plt.subplots()
@@ -390,15 +404,15 @@ def amdf_weighted_acf(inputVector, bIsNormalized=True):
 
 
 def eval_track_pitch(complete_path_to_data_folder):
-    wavpath = np.array([])
-    txtpath = np.array([])
+    wav_path = np.array([])
+    txt_path = np.array([])
     for full_filepath in os.listdir(complete_path_to_data_folder):
         if full_filepath.endswith(".wav"):
             wav_path = np.append(
-                wavpath, complete_path_to_data_folder + full_filepath
+                wav_path, complete_path_to_data_folder + full_filepath
             )
             txt_path = np.append(
-                txtpath,
+                txt_path,
                 complete_path_to_data_folder
                 + full_filepath.split(".")[0]
                 + ".f0.Corrected.txt",
@@ -406,12 +420,12 @@ def eval_track_pitch(complete_path_to_data_folder):
 
     blockSize = 1024
     hopSize = 512
-    errCentRms = np.zeros((3, 2, 3))
+    errCentRms = np.zeros((3, 2, 3, 3))
     for i, method in enumerate(["acf", "max", "hps"]):
         for j, voicingThres in enumerate([-40, -20]):
             all_estimates = np.array([])
             all_groundtruths = np.array([])
-            for wavfile, txtfile in zip(wav_path, txt_path):
+            for k, (wavfile, txtfile) in enumerate(zip(wav_path, txt_path)):
                 fs, x = tool_read_audio(wavfile)
                 file = np.loadtxt(txtfile)
                 groundtruths = file[:, 2]
@@ -420,9 +434,7 @@ def eval_track_pitch(complete_path_to_data_folder):
                 )
                 all_estimates = np.append(all_estimates, estimates)
                 all_groundtruths = np.append(all_groundtruths, groundtruths)
-            errCentRms[i, j] = eval_pitchtrack_v2(
-                all_estimates, all_groundtruths
-            )
+                errCentRms[i, j, k] = eval_pitchtrack_v2(estimates, groundtruths)
     return errCentRms
 
 
@@ -580,7 +592,7 @@ def eval_pitchtrack(estimateInHz, groundtruthInHz):
 
     diffInCent = 100*(convert_freq2midi(estimateInHz) - convert_freq2midi(groundtruthInHz))
 
-    rms = np.sqrt(np.mean(diffInCent[groundtruthInHz != 0]**2))
+    rms = np.sqrt(np.mean(diffInCent ** 2))
     return (rms)
 
 
@@ -592,18 +604,20 @@ def run_evaluation(complete_path_to_data_folder):
         filename, ext = os.path.splitext(filename_ext)
         fs, x = scipy.io.wavfile.read(full_filename)
 
+        track_pitch_functions = (
+        track_pitch_acf,
+        track_pitch_fftmax,
+        track_pitch_hps,
+        track_pitch_mod,
+    )
+
         # first calculate f0
-        for track_pitch_func in (
-            track_pitch_acf,
-            track_pitch_fftmax,
-            track_pitch_hps,
-            track_pitch_mod,
-        ):
+        for track_pitch_func in track_pitch_functions:
             f0, _ = track_pitch_func(x, BLOCK_SIZE, HOP_SIZE, fs)
-            xb, _ = block_audio(x, BLOCK_SIZE, HOP_SIZE, fs)
+            xb, _ = block_audio(x / np.max(np.abs(x)), BLOCK_SIZE, HOP_SIZE, fs)
             rms = extract_rms(xb)
-            voicing_mask = create_voicing_mask(rms, -30)
-            masked_f0 = f0 * voicing_mask
+            voicing_mask = create_voicing_mask(rms, -20)
+            masked_f0 = apply_voicing_mask(f0, voicing_mask)
 
             # then read file
             ground_truth_f0, ground_truth_time_in_sec = [], []
@@ -624,6 +638,15 @@ def run_evaluation(complete_path_to_data_folder):
                 "RMS of %s on %s: %.5f"
                 % (filename, track_pitch_func.__name__, rms_s[-1])
             )
+    
+
+    for i, track_pitch_func in enumerate(track_pitch_functions):
+        rm_func = 0
+        n_s_func = 0
+        for j in range(i, len(rms_s), len(track_pitch_functions)):
+            rm_func += rms_s[j] ** 2 * n_s[j]
+            n_s_func += n_s[j]
+        print("RMS for method %s: %.5f" % (track_pitch_func.__name__, np.sqrt(rm_func / n_s_func)))
 
     overall_err_cent_rms = np.sqrt(
         sum(r ** 2 * n for r, n in zip(rms_s, n_s)) / sum(n_s)
@@ -635,7 +658,30 @@ def run_evaluation(complete_path_to_data_folder):
 if __name__ == "__main__":
 
     run_evaluation("./trainData/")
-
+    # complete_path_to_data_folder = "./trainData/"
+    # wav_path = np.array([])
+    # txt_path = np.array([])
+    # for full_filepath in os.listdir(complete_path_to_data_folder):
+    #     if full_filepath.endswith(".wav"):
+    #         print(full_filepath)
+    #         wav_path = np.append(
+    #             wav_path, complete_path_to_data_folder + full_filepath
+    #         )
+    #         txt_path = np.append(
+    #             txt_path,
+    #             complete_path_to_data_folder
+    #             + full_filepath.split(".")[0]
+    #             + ".f0.Corrected.txt",
+    #         )
+        
+    # print(wav_path, txt_path)
+    # rms = eval_track_pitch("./trainData/")
+    # for i, func in enumerate((track_pitch_acf, track_pitch_fftmax, track_pitch_hps)):
+    #     for j, threshold in enumerate((-40, -20)):
+    #         for k, (wav_file, txt_file) in enumerate(zip(wav_path, txt_path)):
+    #             filepath, filename_ext = os.path.split(wav_file)
+    #             filename, ext = os.path.splitext(filename_ext)
+    #             print("%s, %ddB, %s: rms=%.5f, pfp=%.2f, pfn=%.2f" % (func.__name__, threshold, filename, rms[i, j, k, 0], rms[i, j, k, 1], rms[i, j, k, 2]))
     # executeassign3()
 
     # fs, x = tool_read_audio("trainData/01-D_AMairena.wav")
