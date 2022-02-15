@@ -27,9 +27,9 @@
 
 - [x] E. Evaluation
   - [x] `executeassign3()`
-  - [ ] Same experiment but with different block & hop size.
-  - [ ] Evaluate your `track_pitch_fftmax()` and the `eval_pitchtrack_v2()` 
-  - [ ] Evaluate your `track_pitch_hps()` using the development set and the `eval_pitchtrack_v2()` method. Report the average performance metrics across the development set
-  - [ ] Implement a MATLAB wrapper function `[f0Adj, timeInSec] = track_pitch(x, blockSize, hopSize, fs, method, voicingThres)` that takes audio signal `x` and related paramters (fs, blockSize, hopSize), calls the appropriate pitch tracker based on the method parameter to compute the fundamental frequency and then applies the voicing mask based on the threshold parameter.
-  - [ ] Evaluate your `track_pitch()` using the development set and the `eval_pitchtrack_v2()` method over all 3 pitch trackers (acf, max and hps) and report the results with two values of threshold (threshold = -40, -20)
+  - [x] Same experiment but with different block & hop size.
+  - [x] Evaluate your `track_pitch_fftmax()` and the `eval_pitchtrack_v2()` 
+  - [x] Evaluate your `track_pitch_hps()` using the development set and the `eval_pitchtrack_v2()` method. Report the average performance metrics across the development set
+  - [x] Implement a MATLAB wrapper function `[f0Adj, timeInSec] = track_pitch(x, blockSize, hopSize, fs, method, voicingThres)` that takes audio signal `x` and related paramters (fs, blockSize, hopSize), calls the appropriate pitch tracker based on the method parameter to compute the fundamental frequency and then applies the voicing mask based on the threshold parameter.
+  - [x] Evaluate your `track_pitch()` using the development set and the `eval_pitchtrack_v2()` method over all 3 pitch trackers (acf, max and hps) and report the results with two values of threshold (threshold = -40, -20)
 
